@@ -1,0 +1,617 @@
+---
+title: "Exploratory Data Analysis of Twitter, News, and Blogs datasets for Next Word Prediction"
+author: "Benjamin Sanders"
+date: 09/04/2016
+pdf_document:
+    toc: true
+    highlight: zenburn
+    keep_md: true
+---
+
+Note to graders: Running this analysis on the Twitter data set alone was taking over 6 hours before I cancelled it. I'm aware I'm going to have to find a way to optimize my code for performance. If you have any suggestions on how to do that I'd love to hear them! For now, so that I could submit this before the deadline, I was forced to comment out a lot of the tokenization of emoticons and such that I had wanted to use, and also restrict the analysis to the first 10,000 records from each dataset. I hope you can forgive this limitation. Please don't mark me down because I have a slow computer!
+
+## Executive Summary:
+Below is a summary of findings from the exploratory data analysis of the Twitter, news, and blogs datasets as well as a general plan detailing how the predictive algorithm will be generated. Significant differences were noted between the three datasets, particularly between the Twitter dataset and the others. This suggests that, if possible, a different prediction algorithm should be implemented for each of these contexts. Additional suggestions are made for how the solution could be improved in the future, which are too time prohibative to be implemented in the first iteration of the word prediction algorithm.
+
+## Plan of Action
+
+The datasets will be loaded, cleaned up, put in a form more suitable for analysis, and then used in that form to create the predictive algorithm. Specifically, the following actions will be taken to prepare the data for analysis:
+
+- Lines of text which are incomplete or corrupted will be removed. There were only three lines of text which were removed in this way.
+- Greater than, less than, non-ascii characters, and other misc symbols will be ignored.
+- Multiple spaces will be treated as a single space. Likewise two periods will be counted as one. Other white space, such as tabs, will be ignored.
+- All detected emoticons will be replaced with a generic token for the type of emoticon, such as '-sad-', '-angry-', or '-happy-'.
+- Commas, @, &, names, emoticons, elipses, and the beginning of sentences will be used as words for predictive purposes, but not for suggestion purposes. IE: "He said yes" and "He said yes," may produce different suggestions for the next word. My rational for this decision is that it is just as easy to click a comma as it is to select a comma from the recommendation, and once the user has done so the recommendation will be updated to reflect that fact. I feel that this strikes a balance between the assumption of punctuation and the accounting of punctuation for predictive purposes.
+- Exclamation and question marks will be treated the same as period, only to delineate the end of a sentence.
+- Numerals will be ignored. This is because the time and effort required to create a system to equate numerals with their equivilent words would be prohibative.
+- In the future, explatives could be handled by replacing them in the text with a generic explative token, or just be removed entirely. One would need to create a fairly exhuastive list of explatives, or use a public explative dataset. Unfortunately the runtime for matching a long list of words against a large number of lines of text is prohibative, so this will not be undertaken for the current iteration of the prediction algorithm.
+- In the future, names could be handled by replacing them in the text with a generic name token. One would need to create a fairly exhuastive list of names, or use a public name dataset. Unfortunately the runtime for matching a long list of words against a large number of lines of text is prohibative, so this will not be undertaken for the current iteration of the prediction algorithm.
+- In the future foreign words could be identified by compairing the words with an English dictionary dataset. Unfortunately the runtime for matching a long list of words against a large number of lines of text is prohibative, so this will not be undertaken for the current iteration of the prediction algorithm.
+- In the future, we could reduce the number of words, word pairs, and word trios by converting all synonyms of a word to a generic form of the word. One would need to create a fairly exhuastive list of synonyms, or use a public synonym dataset. Unfortunately the runtime for matching a long list of words against a large number of lines of text is prohibative, so this will not be undertaken for the current iteration of the prediction algorithm.
+- Words from prior sentences will be ignored. It would take a lot of complex work to implement such contextual understanding, and if done poorly could hurt the model.
+- Words which appear once, and associated n-grams, will be discarded. this is a form of simple typo filter.
+- All identified tokens will be separated from adjacent text with a space to ensure their separate identification in the algorithm.
+
+Once the data has been prepared the Markov Chain algorithm will be applied to create the predictive model. Essentially, that means that we will count all the times we saw this word or series of words and use the most common word following those as the prediction.
+
+
+## Exploratory Data Analysis
+
+We can ignore sentancestart and other tokens as a 'word', since I injected them as calculated values.
+
+### Twitter
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+setwd("~/Coursera/Capstone")
+tcon <- file("en_US.twitter.txt", "r")
+
+twitter <- readLines(tcon)
+
+rm(tcon)
+# Remove bad lines
+twitter[1274086] <- ""
+twitter[1759032] <- ""
+
+dataset <- twitter[1:10000]
+```
+
+This dataset has `r length(dataset)` entires in it.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+dataset <- sapply(dataset, function(x) iconv(x, "latin1", "ASCII", sub=""))
+dataset <- sapply(dataset, function(x) gsub("<+|>+", "", x)) 
+# dataset <- sapply(dataset, function(x) gsub('\\.\\.\\.\\.',  ' <ellipses> ', x))
+# dataset <- sapply(dataset, function(x) gsub('\\.\\.\\.', ' <ellipses> ', x))
+# dataset <- sapply(dataset, function(x) gsub('\\.+', '.', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*[/\\\\])|([/\\\\][-]*[=8:])', ' <unsure> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(;[-]*[D\\)])|([\\(][-]*;)', ' <wink> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=B8:;][-]*[p])|([d][-]*[=:8;])', ' <silly> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8B:][-]*[D\\}\\)])|([\\{\\(][-]*[=8:])', ' <happy> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(>[=8:][-]*[X\\{\\(])|([X\\}\\)][-]*[=8:]<)|([=8:][-]*X)|(X[-]*[=8:])', ' <angry> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][`-]*[\\{\\(])|([D\\}\\)][`_-]*[=8:])', ' <sad> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*\\|)|(\\|[-]*[=8:])', ' <indifferent> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*[0oO])|([0oO][-]*[=8:])', ' <surprised> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(o\\.[0O])|([0O]\\.o)', ' <confused> ', x))
+dataset <- sapply(dataset, function(x) gsub("[\\!\\?]+", ".", x))
+# dataset <- sapply(dataset, function(x) gsub("[,]+", " <comma> ", x))
+# dataset <- sapply(dataset, function(x) gsub("[@] ", " <ampersat> ", x))
+# dataset <- sapply(dataset, function(x) gsub("[&] ", " <ampersand> ", x))
+dataset <- sapply(dataset, function(x) gsub("([^[:alpha:]^ ^\\.^>^<^!^?])", "", x))
+# dataset <- sapply(dataset, function(x) gsub("\\^", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.]+ ", ".<sentancestart> ", x))
+dataset <- sapply(dataset, function(x) gsub("^", ".<sentancestart> ", x))
+dataset <- sapply(dataset, function(x) gsub("^\\.<sentancestart> $", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.][a-zA-Z]+", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.]$", "", x))
+dataset <- sapply(dataset, function(x) gsub("[[:space:]]+", " ", x))
+dataset <- sapply(dataset, function(x) gsub("(^ )|( $)", "", x))
+
+
+dataset <- paste(dataset, collapse = "")
+dataset <- gsub("^\\.<sentancestart> ", "<sentancestart> ", dataset)
+dataset <- strsplit(dataset,"\\.")[[1]]
+
+sentencelengths <- vector('numeric')
+wordcounts <- vector('numeric')
+wordpaircounts <- vector('numeric')
+trigrams <- vector('numeric')
+
+for(i in 1:length(dataset)){
+  words <- unname(strsplit(dataset[i], "\\ ")[[1]])
+  sentencelengths[i] <- length(words)-1
+  for(j in 1:length(words)) {
+    word <- words[j]
+    
+    if(is.na(words[j+1])==FALSE) {
+      if(is.na(wordcounts[word])==TRUE) {
+        wordcounts[word] <- 1
+      }
+      else {
+        wordcounts[word] <- wordcounts[word]+1
+      }
+    
+      if(is.na(words[j+2])==FALSE) {
+        wordpair <- paste(words[j], words[j+1], collapse=" ")
+        if (is.na(wordpaircounts[wordpair])==TRUE) {
+        wordpaircounts[wordpair] <- 1
+        }
+        else {
+          wordpaircounts[wordpair] <- wordpaircounts[wordpair]+1
+        }
+      
+        if(is.na(words[j+3])==FALSE) {
+          trigram <- paste(words[j], words[j+1], words[j+2], collapse=" ")
+          if (is.na(trigrams[trigram])==TRUE) {
+            trigrams[trigram] <- 1
+          }
+          else {
+            trigrams[trigram] <- trigrams[trigram]+1
+          }
+        }
+      }
+    }
+  }
+}
+
+wordcounts <- sort(wordcounts, decreasing = TRUE)
+wordpaircounts <- sort(wordpaircounts, decreasing = TRUE)
+trigrams <- sort(trigrams, decreasing = TRUE)
+```
+
+This dataset has `r length(dataset)` sentances in it.
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(sentencelengths, main="Distribution of Sentence Lengths", xlab="Number of Words in Sentance", ylab="Number of Sentances")
+```
+
+The following table lists the 10 most common words and symbols as well as their counts:
+```{r ECHO=FALSE}
+wordcounts[2:11]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordcounts[2:length(wordcounts)], main="Distribution of Word Frequencies", xlab="The number of times the word was counted in the dataset", ylab="Number of Words")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordcounts[wordcounts<3*median(wordcounts)], main="Distribution of Word Frequencies Excluding Outliers", xlab="The number of times the word was counted in the dataset", ylab="Number of Words")
+```
+
+The following table shows the top 11 wordpairs and their associated counts:
+```{r ECHO=FALSE}
+wordpaircounts[1:10]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordpaircounts, main="Distribution of Word Pair Frequencies", xlab="The number times of the word pair was counted in the dataset", ylab="Number of Word Pairs")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordpaircounts[wordpaircounts<3*median(wordpaircounts)], main="Distribution of Word Pair Frequencies Excluding Outliers", xlab="The number times of the word pair was counted in the dataset", ylab="Number of Word Pairs")
+```
+
+The following table shows the top 10 word trios and their associated counts:
+```{r ECHO=FALSE}
+trigrams[1:10]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(trigrams, main="Distribution of Word Trio Frequencies", xlab="The number of times the word trio was counted in the dataset", ylab="Number of Word Trios")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(trigrams[trigrams<3*median(trigrams)], main="Distribution of Word Trio Frequencies", xlab="The number of times the word trio was counted in the dataset", ylab="Number of Word Trios")
+```
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totalwords <- sum(wordcounts)
+
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+wordcounts[x]
+  y <- z/totalwords
+}
+```
+There were `r totalwords` words detected which have a following word to predict.
+We would have to use the top `r x` words to have 90% of cases covered.
+
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totalpairs <- sum(wordpaircounts)
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+wordpaircounts[x]
+  y <- z/totalpairs
+}
+```
+There were `r totalpairs` word pairs detected which have a following word to predict.
+We would have to use the top `r x` word pairs to have 90% of cases covered.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totaltrigrams <- sum(trigrams)
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+trigrams[x]
+  y <- z/totaltrigrams
+}
+```
+There were `r totaltrigrams` word trios detected which have a following word to predict.
+We would have to use the top `r x` word trios to have 90% of cases covered.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+rm(twitter)
+rm(dataset)
+```
+
+
+### Blogs
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+bcon <- file("en_US.blogs.txt", "r")
+
+blogs <- readLines(bcon)
+
+rm(bcon)
+
+dataset <- blogs[1:10000]
+```
+
+
+This dataset has `r length(dataset)` entires in it.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+dataset <- sapply(dataset, function(x) iconv(x, "latin1", "ASCII", sub=""))
+dataset <- sapply(dataset, function(x) gsub("<+|>+", "", x)) 
+# dataset <- sapply(dataset, function(x) gsub('\\.\\.\\.\\.',  ' <ellipses> ', x))
+# dataset <- sapply(dataset, function(x) gsub('\\.\\.\\.', ' <ellipses> ', x))
+# dataset <- sapply(dataset, function(x) gsub('\\.+', '.', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*[/\\\\])|([/\\\\][-]*[=8:])', ' <unsure> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(;[-]*[D\\)])|([\\(][-]*;)', ' <wink> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=B8:;][-]*[p])|([d][-]*[=:8;])', ' <silly> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8B:][-]*[D\\}\\)])|([\\{\\(][-]*[=8:])', ' <happy> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(>[=8:][-]*[X\\{\\(])|([X\\}\\)][-]*[=8:]<)|([=8:][-]*X)|(X[-]*[=8:])', ' <angry> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][`-]*[\\{\\(])|([D\\}\\)][`_-]*[=8:])', ' <sad> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*\\|)|(\\|[-]*[=8:])', ' <indifferent> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*[0oO])|([0oO][-]*[=8:])', ' <surprised> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(o\\.[0O])|([0O]\\.o)', ' <confused> ', x))
+dataset <- sapply(dataset, function(x) gsub("[\\!\\?]+", ".", x))
+# dataset <- sapply(dataset, function(x) gsub("[,]+", " <comma> ", x))
+# dataset <- sapply(dataset, function(x) gsub("[@] ", " <ampersat> ", x))
+# dataset <- sapply(dataset, function(x) gsub("[&] ", " <ampersand> ", x))
+dataset <- sapply(dataset, function(x) gsub("([^[:alpha:]^ ^\\.^>^<^!^?])", "", x))
+# dataset <- sapply(dataset, function(x) gsub("\\^", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.]+ ", ".<sentancestart> ", x))
+dataset <- sapply(dataset, function(x) gsub("^", ".<sentancestart> ", x))
+dataset <- sapply(dataset, function(x) gsub("^\\.<sentancestart> $", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.][a-zA-Z]+", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.]$", "", x))
+dataset <- sapply(dataset, function(x) gsub("[[:space:]]+", " ", x))
+dataset <- sapply(dataset, function(x) gsub("(^ )|( $)", "", x))
+
+
+dataset <- paste(dataset, collapse = "")
+dataset <- gsub("^\\.<sentancestart> ", "<sentancestart> ", dataset)
+dataset <- strsplit(dataset,"\\.")[[1]]
+
+sentencelengths <- vector('numeric')
+wordcounts <- vector('numeric')
+wordpaircounts <- vector('numeric')
+trigrams <- vector('numeric')
+
+for(i in 1:length(dataset)){
+  words <- unname(strsplit(dataset[i], "\\ ")[[1]])
+  sentencelengths[i] <- length(words)-1
+  for(j in 1:length(words)) {
+    word <- words[j]
+    
+    if(is.na(words[j+1])==FALSE) {
+      if(is.na(wordcounts[word])==TRUE) {
+        wordcounts[word] <- 1
+      }
+      else {
+        wordcounts[word] <- wordcounts[word]+1
+      }
+    
+      if(is.na(words[j+2])==FALSE) {
+        wordpair <- paste(words[j], words[j+1], collapse=" ")
+        if (is.na(wordpaircounts[wordpair])==TRUE) {
+        wordpaircounts[wordpair] <- 1
+        }
+        else {
+          wordpaircounts[wordpair] <- wordpaircounts[wordpair]+1
+        }
+      
+        if(is.na(words[j+3])==FALSE) {
+          trigram <- paste(words[j], words[j+1], words[j+2], collapse=" ")
+          if (is.na(trigrams[trigram])==TRUE) {
+            trigrams[trigram] <- 1
+          }
+          else {
+            trigrams[trigram] <- trigrams[trigram]+1
+          }
+        }
+      }
+    }
+  }
+}
+
+wordcounts <- sort(wordcounts, decreasing = TRUE)
+wordpaircounts <- sort(wordpaircounts, decreasing = TRUE)
+trigrams <- sort(trigrams, decreasing = TRUE)
+```
+
+This dataset has `r length(dataset)` sentances in it.
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(sentencelengths, main="Distribution of Sentence Lengths", xlab="Number of Words in Sentance", ylab="Number of Sentances")
+```
+
+The following table lists the 10 most common words and symbols as well as their counts:
+```{r ECHO=FALSE}
+wordcounts[2:11]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordcounts[2:length(wordcounts)], main="Distribution of Word Frequencies", xlab="The number of times the word was counted in the dataset", ylab="Number of Words")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordcounts[wordcounts<3*median(wordcounts)], main="Distribution of Word Frequencies Excluding Outliers", xlab="The number of times the word was counted in the dataset", ylab="Number of Words")
+```
+
+The following table shows the top 11 wordpairs and their associated counts:
+```{r ECHO=FALSE}
+wordpaircounts[1:10]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordpaircounts, main="Distribution of Word Pair Frequencies", xlab="The number times of the word pair was counted in the dataset", ylab="Number of Word Pairs")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordpaircounts[wordpaircounts<3*median(wordpaircounts)], main="Distribution of Word Pair Frequencies Excluding Outliers", xlab="The number times of the word pair was counted in the dataset", ylab="Number of Word Pairs")
+```
+
+The following table shows the top 10 word trios and their associated counts:
+```{r ECHO=FALSE}
+trigrams[1:10]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(trigrams, main="Distribution of Word Trio Frequencies", xlab="The number of times the word trio was counted in the dataset", ylab="Number of Word Trios")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(trigrams[trigrams<3*median(trigrams)], main="Distribution of Word Trio Frequencies", xlab="The number of times the word trio was counted in the dataset", ylab="Number of Word Trios")
+```
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totalwords <- sum(wordcounts)
+
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+wordcounts[x]
+  y <- z/totalwords
+}
+```
+There were `r totalwords` words detected which have a following word to predict.
+We would have to use the top `r x` words to have 90% of cases covered.
+
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totalpairs <- sum(wordpaircounts)
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+wordpaircounts[x]
+  y <- z/totalpairs
+}
+```
+There were `r totalpairs` word pairs detected which have a following word to predict.
+We would have to use the top `r x` word pairs to have 90% of cases covered.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totaltrigrams <- sum(trigrams)
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+trigrams[x]
+  y <- z/totaltrigrams
+}
+```
+There were `r totaltrigrams` word trios detected which have a following word to predict.
+We would have to use the top `r x` word trios to have 90% of cases covered.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+rm(blogs)
+rm(dataset)
+```
+
+
+### News
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+ncon <- file("en_US.news.txt", "r")
+news <- readLines(ncon)
+
+#remove bad line
+news <- news[1:(length(news)-1)]
+
+rm(ncon)
+
+dataset <- news[1:10000]
+```
+
+
+This dataset has `r length(dataset)` entires in it.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+dataset <- sapply(dataset, function(x) iconv(x, "latin1", "ASCII", sub=""))
+dataset <- sapply(dataset, function(x) gsub("<+|>+", "", x)) 
+# dataset <- sapply(dataset, function(x) gsub('\\.\\.\\.\\.',  ' <ellipses> ', x))
+# dataset <- sapply(dataset, function(x) gsub('\\.\\.\\.', ' <ellipses> ', x))
+# dataset <- sapply(dataset, function(x) gsub('\\.+', '.', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*[/\\\\])|([/\\\\][-]*[=8:])', ' <unsure> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(;[-]*[D\\)])|([\\(][-]*;)', ' <wink> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=B8:;][-]*[p])|([d][-]*[=:8;])', ' <silly> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8B:][-]*[D\\}\\)])|([\\{\\(][-]*[=8:])', ' <happy> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(>[=8:][-]*[X\\{\\(])|([X\\}\\)][-]*[=8:]<)|([=8:][-]*X)|(X[-]*[=8:])', ' <angry> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][`-]*[\\{\\(])|([D\\}\\)][`_-]*[=8:])', ' <sad> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*\\|)|(\\|[-]*[=8:])', ' <indifferent> ', x))
+# dataset <- sapply(dataset, function(x) gsub('([=8:][-]*[0oO])|([0oO][-]*[=8:])', ' <surprised> ', x))
+# dataset <- sapply(dataset, function(x) gsub('(o\\.[0O])|([0O]\\.o)', ' <confused> ', x))
+dataset <- sapply(dataset, function(x) gsub("[\\!\\?]+", ".", x))
+# dataset <- sapply(dataset, function(x) gsub("[,]+", " <comma> ", x))
+# dataset <- sapply(dataset, function(x) gsub("[@] ", " <ampersat> ", x))
+# dataset <- sapply(dataset, function(x) gsub("[&] ", " <ampersand> ", x))
+dataset <- sapply(dataset, function(x) gsub("([^[:alpha:]^ ^\\.^>^<^!^?])", "", x))
+# dataset <- sapply(dataset, function(x) gsub("\\^", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.]+ ", ".<sentancestart> ", x))
+dataset <- sapply(dataset, function(x) gsub("^", ".<sentancestart> ", x))
+dataset <- sapply(dataset, function(x) gsub("^\\.<sentancestart> $", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.][a-zA-Z]+", "", x))
+dataset <- sapply(dataset, function(x) gsub("[\\.]$", "", x))
+dataset <- sapply(dataset, function(x) gsub("[[:space:]]+", " ", x))
+dataset <- sapply(dataset, function(x) gsub("(^ )|( $)", "", x))
+
+
+dataset <- paste(dataset, collapse = "")
+dataset <- gsub("^\\.<sentancestart> ", "<sentancestart> ", dataset)
+dataset <- strsplit(dataset,"\\.")[[1]]
+
+sentencelengths <- vector('numeric')
+wordcounts <- vector('numeric')
+wordpaircounts <- vector('numeric')
+trigrams <- vector('numeric')
+
+for(i in 1:length(dataset)){
+  words <- unname(strsplit(dataset[i], "\\ ")[[1]])
+  sentencelengths[i] <- length(words)-1
+  for(j in 1:length(words)) {
+    word <- words[j]
+    
+    if(is.na(words[j+1])==FALSE) {
+      if(is.na(wordcounts[word])==TRUE) {
+        wordcounts[word] <- 1
+      }
+      else {
+        wordcounts[word] <- wordcounts[word]+1
+      }
+    
+      if(is.na(words[j+2])==FALSE) {
+        wordpair <- paste(words[j], words[j+1], collapse=" ")
+        if (is.na(wordpaircounts[wordpair])==TRUE) {
+        wordpaircounts[wordpair] <- 1
+        }
+        else {
+          wordpaircounts[wordpair] <- wordpaircounts[wordpair]+1
+        }
+      
+        if(is.na(words[j+3])==FALSE) {
+          trigram <- paste(words[j], words[j+1], words[j+2], collapse=" ")
+          if (is.na(trigrams[trigram])==TRUE) {
+            trigrams[trigram] <- 1
+          }
+          else {
+            trigrams[trigram] <- trigrams[trigram]+1
+          }
+        }
+      }
+    }
+  }
+}
+
+wordcounts <- sort(wordcounts, decreasing = TRUE)
+wordpaircounts <- sort(wordpaircounts, decreasing = TRUE)
+trigrams <- sort(trigrams, decreasing = TRUE)
+```
+
+This dataset has `r length(dataset)` sentances in it.
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(sentencelengths, main="Distribution of Sentence Lengths", xlab="Number of Words in Sentance", ylab="Number of Sentances")
+```
+
+The following table lists the 10 most common words and symbols as well as their counts:
+```{r ECHO=FALSE}
+wordcounts[2:11]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordcounts[2:length(wordcounts)], main="Distribution of Word Frequencies", xlab="The number of times the word was counted in the dataset", ylab="Number of Words")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordcounts[wordcounts<3*median(wordcounts)], main="Distribution of Word Frequencies Excluding Outliers", xlab="The number of times the word was counted in the dataset", ylab="Number of Words")
+```
+
+The following table shows the top 11 wordpairs and their associated counts:
+```{r ECHO=FALSE}
+wordpaircounts[1:10]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordpaircounts, main="Distribution of Word Pair Frequencies", xlab="The number times of the word pair was counted in the dataset", ylab="Number of Word Pairs")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(wordpaircounts[wordpaircounts<3*median(wordpaircounts)], main="Distribution of Word Pair Frequencies Excluding Outliers", xlab="The number times of the word pair was counted in the dataset", ylab="Number of Word Pairs")
+```
+
+The following table shows the top 10 word trios and their associated counts:
+```{r ECHO=FALSE}
+trigrams[1:10]
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(trigrams, main="Distribution of Word Trio Frequencies", xlab="The number of times the word trio was counted in the dataset", ylab="Number of Word Trios")
+```
+
+```{r fig.height=4, fig.width=8, echo=FALSE}
+hist(trigrams[trigrams<3*median(trigrams)], main="Distribution of Word Trio Frequencies", xlab="The number of times the word trio was counted in the dataset", ylab="Number of Word Trios")
+```
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totalwords <- sum(wordcounts)
+
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+wordcounts[x]
+  y <- z/totalwords
+}
+```
+There were `r totalwords` words detected which have a following word to predict.
+We would have to use the top `r x` words to have 90% of cases covered.
+
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totalpairs <- sum(wordpaircounts)
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+wordpaircounts[x]
+  y <- z/totalpairs
+}
+```
+There were `r totalpairs` word pairs detected which have a following word to predict.
+We would have to use the top `r x` word pairs to have 90% of cases covered.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+totaltrigrams <- sum(trigrams)
+x <- 0
+y <- 0
+z <- 0
+while(y<.9) {
+  x <- x+1
+  z <- z+trigrams[x]
+  y <- z/totaltrigrams
+}
+```
+There were `r totaltrigrams` word trios detected which have a following word to predict.
+We would have to use the top `r x` word trios to have 90% of cases covered.
+
+```{r echo=FALSE,warning=FALSE, message=FALSE}
+rm(news)
+rm(dataset)
+```
+
+
+
